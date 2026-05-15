@@ -1,0 +1,19 @@
+# Data files
+data/opsd_time_series_60min_singleindex.csv
+data/*.csv
+
+# Models
+models/default_rf_model.pkl
+models/*.pkl
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Scratch and temp files
+scratch/
+temp/
+.vscode/

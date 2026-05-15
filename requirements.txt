@@ -1,0 +1,6 @@
+pandas
+scikit-learn
+xgboost
+plotly
+streamlit
+# tensorflow unavailable on Python 3.14; use Python 3.11/3.12 if TensorFlow is required

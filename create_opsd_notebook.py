@@ -1,0 +1,235 @@
+from pathlib import Path
+
+notebook = {
+    "cells": [
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "# OPSD Data Exploration\n",
+                "This notebook sets up the Python environment, downloads the Open Power System Data hourly dataset for Germany, explores the dataset, and visualizes hourly demand patterns over one week and one month."
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 1. Install Required Libraries\n",
+                "Install `pandas`, `scikit-learn`, `xgboost`, and `streamlit`. Note that `tensorflow` may not be available on Python 3.14 in this environment."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "!pip install pandas scikit-learn xgboost streamlit"
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import sys\n",
+                "print('Python version:', sys.version)\n",
+                "try:\n",
+                "    import tensorflow as tf\n",
+                "    print('TensorFlow version:', tf.__version__)\n",
+                "except Exception as exc:\n",
+                "    print('TensorFlow not available in this environment:', exc)"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 2. Download OPSD Dataset\n",
+                "Download the OPSD hourly time series dataset and save it to the repository `data/` folder."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import requests\n",
+                "from pathlib import Path\n",
+                "\n",
+                "data_dir = Path('..') / 'data'\n",
+                "data_dir.mkdir(parents=True, exist_ok=True)\n",
+                "output_file = data_dir / 'opsd_time_series_60min.csv'\n",
+                "candidate_dates = [\n",
+                "    '2025-04-30', '2025-03-31', '2025-02-28', '2025-01-31',\n",
+                "    '2024-12-31', '2024-11-30', '2024-10-31', '2024-09-30'\n",
+                "]\n",
+                "downloaded = False\n",
+                "for date in candidate_dates:\n",
+                "    url = f'https://data.open-power-system-data.org/time_series/{date}/time_series_60min.csv'\n",
+                "    print('Checking', url)\n",
+                "    try:\n",
+                "        head = requests.head(url, allow_redirects=True, timeout=20)\n",
+                "        if head.status_code == 200:\n",
+                "            response = requests.get(url, timeout=120)\n",
+                "            response.raise_for_status()\n",
+                "            output_file.write_bytes(response.content)\n",
+                "            print('Downloaded OPSD dataset to', output_file)\n",
+                "            downloaded = True\n",
+                "            break\n",
+                "        else:\n",
+                "            print('Not found:', head.status_code)\n",
+                "    except Exception as exc:\n",
+                "        print('Failed for', url, exc)\n",
+                "\n",
+                "if not downloaded:\n",
+                "    raise RuntimeError('Could not download OPSD dataset. Please verify the URL or network access.')"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 3. Load and Explore Data\n",
+                "Load the downloaded dataset into pandas, inspect the shape, missing values, date range, and column types."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import pandas as pd\n",
+                "from pathlib import Path\n",
+                "\n",
+                "data_file = Path('..') / 'data' / 'opsd_time_series_60min.csv'\n",
+                "print('Data file exists:', data_file.exists())\n",
+                "sample = pd.read_csv(data_file, sep=';', nrows=5)\n",
+                "print('Sample columns:', sample.columns.tolist())\n",
+                "\n",
+                "df = pd.read_csv(data_file, sep=';', low_memory=False)\n",
+                "df.columns = df.columns.str.strip()\n",
+                "if 'utc_timestamp' in df.columns:\n",
+                "    df['utc_timestamp'] = pd.to_datetime(df['utc_timestamp'], utc=True, errors='coerce')\n",
+                "    df = df.set_index('utc_timestamp').sort_index()\n",
+                "else:\n",
+                "    print('Warning: expected utc_timestamp column not found.')\n",
+                "\n",
+                "print('Shape:', df.shape)\n",
+                "print('Date range:', df.index.min(), 'to', df.index.max())\n",
+                "print('Missing values by column:')\n",
+                "print(df.isna().sum().loc[lambda x: x > 0])\n",
+                "print('\\nData types:')\n",
+                "print(df.dtypes)"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 4. Plot Hourly Demand Over 1 Week\n",
+                "Select a one-week period from the dataset and plot hourly demand to highlight morning peaks, night dips, and weekend patterns."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import matplotlib.pyplot as plt\n",
+                "\n",
+                "load_cols = [c for c in df.columns if 'load' in c.lower()]\n",
+                "if load_cols:\n",
+                "    demand_col = load_cols[0]\n",
+                "else:\n",
+                "    demand_col = df.columns[0]\n",
+                "print('Using demand column:', demand_col)\n",
+                "\n",
+                "one_week_start = df.index.min()\n",
+                "one_week = df.loc[one_week_start:one_week_start + pd.Timedelta(days=7)]\n",
+                "\n",
+                "plt.figure(figsize=(14, 5))\n",
+                "plt.plot(one_week.index, one_week[demand_col], label='Hourly demand')\n",
+                "plt.title('Hourly Demand Over One Week')\n",
+                "plt.xlabel('Date')\n",
+                "plt.ylabel(demand_col)\n",
+                "plt.grid(True, alpha=0.3)\n",
+                "plt.tight_layout()\n",
+                "plt.legend()\n",
+                "plt.show()"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 5. Plot Hourly Demand Over 1 Month\n",
+                "Plot a one-month period of hourly demand to observe broader cycles, weekends, and daily peak shapes."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "one_month = df.loc[one_week_start:one_week_start + pd.Timedelta(days=30)]\n",
+                "\n",
+                "plt.figure(figsize=(16, 6))\n",
+                "plt.plot(one_month.index, one_month[demand_col], label='Hourly demand')\n",
+                "plt.title('Hourly Demand Over One Month')\n",
+                "plt.xlabel('Date')\n",
+                "plt.ylabel(demand_col)\n",
+                "plt.grid(True, alpha=0.3)\n",
+                "plt.tight_layout()\n",
+                "plt.legend()\n",
+                "plt.show()"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 6. Set Up GitHub Repository Structure\n",
+                "Create the repo folders for data, notebooks, models, and dashboard structure."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "from pathlib import Path\n",
+                "\n",
+                "root = Path('..')\n",
+                "for folder in ['data', 'notebooks', 'models', 'dashboard']:\n",
+                "    path = root / folder\n",
+                "    path.mkdir(parents=True, exist_ok=True)\n",
+                "    print('Ensured', path)\n",
+                "\n",
+                "print('Repository folder structure is ready.')"
+            ]
+        }
+    ],
+    "metadata": {
+        "kernelspec": {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3"
+        },
+        "language_info": {
+            "name": "python",
+            "version": "3.14"
+        }
+    },
+    "nbformat": 4,
+    "nbformat_minor": 5
+}
+
+import json
+Path('notebooks/OPSD_exploration.ipynb').write_text(json.dumps(notebook, indent=2), encoding='utf-8')
